@@ -181,62 +181,6 @@ void makeRFSfilters(vector<Mat>& edge, vector<Mat >& bar, vector<Mat>& rot, vect
     rot.push_back(rotThis2Mat);
 }
 
-//", vector<Mat>& edgeNormalised"
-void normaliseFilters(vector<Mat>& edge, vector<Mat>& edgeNormalised) {
-    int size = edge[0].rows * edge[0].cols;
-    for(uint i = 0; i < edge.size(); i++)
-    {
-        Mat edgeNew = Mat::zeros(edge[i].rows, edge[i].cols, CV_8UC1);
-        uchar* pNewEdge = (uchar*) edgeNew.data;
-        float* pEdge = (float*)edge[i].data;
-        double minVal; double maxVal; Point minLoc; Point maxLoc;
-
-        minMaxLoc(edge[i], &minVal, &maxVal, &minLoc, &maxLoc, noArray());
-        float multyplayFactor = 125 / max(abs(minVal), abs(maxVal));
-        for(int i = 0; i < size; i++)
-        {
-            *pNewEdge = 125 + *pEdge * multyplayFactor;
-            pEdge++;
-            pNewEdge++;
-        }
-        edgeNormalised.push_back(edgeNew);
-    }
-}
-
-void drawing(vector<Mat>& edge, vector<Mat>& bar, vector<Mat>& rot, int n_sigmas, int n_orientations) {
-    vector<Mat > edgeNormalised, barNormalised, rotNormalised;
-    normaliseFilters(edge, edgeNormalised);
-    normaliseFilters(bar, barNormalised);
-    normaliseFilters(rot, rotNormalised);
-
-    int support = edge[0].cols;
-    int width = support * (1.5 * n_orientations +1);
-    int height = support * (1.5 * n_sigmas + 1) + support * (1.5 * n_sigmas) + support * 1.5;
-
-    Mat filterShow = Mat::zeros(height, width, CV_8UC1);
-
-    int edgeIndex = 0;
-    for(int sigmaIndex = 0; sigmaIndex < n_sigmas; sigmaIndex++)
-        for(int orient = 0; orient < n_orientations; orient++)
-        {
-            //edge
-            Mat ref = filterShow(Rect(support * (1.5*orient + 0.5), support * (1.5*sigmaIndex + 0.5), support, support));
-            edgeNormalised[edgeIndex].copyTo(ref);
-
-            //bar
-            ref = filterShow(Rect(support * (1.5*orient + 0.5), support * (1.5*sigmaIndex + 0.5 + n_sigmas * 1.5), support, support));
-            barNormalised[edgeIndex].copyTo(ref);
-            edgeIndex++;
-        }
-
-    //rot
-    Mat ref = filterShow(Rect(support * (1.5*0 + 0.5), support * (0.5 + 2 * n_sigmas * 1.5), support, support));
-    rotNormalised[0].copyTo(ref);
-    ref = filterShow(Rect(support * (1.5*1 + 0.5), support * (0.5 + 2 * n_sigmas * 1.5), support, support));
-    rotNormalised[1].copyTo(ref);
-
-}
-
 void  apply_filterbank(Mat &img, vector<vector<Mat> >filterbank, vector<vector<Mat> > &response, int n_sigmas, int n_orientations) {
     response.resize(3);
     vector<Mat>& edges = filterbank[0];
@@ -293,29 +237,6 @@ void  apply_filterbank(Mat &img, vector<vector<Mat> >filterbank, vector<vector<M
 
       }
   cout <<"leaving apply filterbank" << endl;
-}
-
-void normaliseImage(Mat& image, Mat& normalised)
-{
-    normalised = Mat::zeros(image.rows, image.cols, CV_8UC1);
-    uchar* pImage = (uchar*) image.data;
-    uchar* pNormalised = (uchar*)normalised.data;
-    double minVal; double maxVal; Point minLoc; Point maxLoc;
-
-    minMaxLoc(image, &minVal, &maxVal, &minLoc, &maxLoc, noArray());
-
-    for(int i = 0; i < image.rows * image.cols; i++)
-    {
-        *pNormalised = (*pImage - minVal)/ (maxVal - minVal) * 255;
-
-        pImage++;
-        pNormalised++;
-    }
-}
-
-// Save to image dir
-void saveImgs(uint num, Mat image) {
-    imwrite("images/imageNo1.png", image);
 }
 
 // Aggregate Images
@@ -889,10 +810,32 @@ void createFilterbank(mH2 &filterbank, int &n_sigmas, int &n_orientations){
   filterbank.push_back(rot);
 }
 
-int main()
-{
+void getImages(path p){
+  try{
+    // Check path exists
+    if(exists(p)){
+      if(is_regular_file(p)){
+        cout << p << " is a regular file, with a size of: " << file_size(p) << endl;
+      }else if(is_directory(p)){
+          cout << "This is a directory containing: " << endl;
+          copy(directory_iterator(p), directory_iterator(),
+          ostream_iterator<directory_entry>(cout, "\n"));
+      }else{
+        cout << "The path is valid but this is not a regular file." << endl;
+      }
+    }else{
+      cout << "This path is not valid." << endl;
+    }
+  }
+  catch(const filesystem_error& ex){
+  }
+}
+
+int main(){
     // Start the window thread(essential for deleting windows)
     cvStartWindowThread();
+    path p("./CMakeFiles");
+    getImages(p);
 
     // dirs holding texton and model generating images
     string textonclasses[] = {"wood", "cotton", "cork", "bread"};
