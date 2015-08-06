@@ -4,7 +4,6 @@
 #include <fstream>
 #include "set"
 #include "stack"
-#include <iostream>
 #include "stdio.h"
 #include "string"
 #include <vector>
@@ -20,7 +19,10 @@ using namespace std;
 #include <chrono>  // time measurement
 #include <thread>  // time measurement
 #include <boost/math/special_functions/round.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/range/algorithm.hpp>
 
+using namespace boost::filesystem;
 using namespace cv;
 
 typedef unsigned int uint;
@@ -330,8 +332,16 @@ void aggregateImg(uint num, double alpha, Mat &aggImg, Mat input) {
 
 // Apply kmeans, rtn centers
 Mat applyKmeans(Mat samples, int clusterCount){
+    // Mat labels = Mat(20,1,CV_32S);
+    // vector<int> inputLabels = {0,0,10,10,20,20,30,30,40,40,50,50,60,60,70,70,80,80,90,90,99,99};
+    //
+    // for(int k =0;k<20;k++){
+    //   labels.at<float>(k,0) = inputLabels[k];
+    //   cout << "this is the labels: "<< k << " : " << labels.at<float>(k,0) << endl;
+    // }
+    Mat labels;
     int  attempts = 5;
-    Mat  labels, centers;
+    Mat  centers;
     // Apply KMeans
     kmeans(samples, clusterCount, labels, TermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 10000, 0.0001), attempts, KMEANS_PP_CENTERS, centers);
     return centers;
@@ -427,7 +437,8 @@ void drawingResponceInner(vector<Mat>& response, vector<vector<float> > &models,
       // cluster and save to models
       Mat clusters = createSamples(response[imageIndex], 10);
       // multiply type*3 then add imageIndex to access all 8 vector locations
-      matToVec(models[(type*3)+imageIndex], clusters);
+//      matToVec(models[(type*3)+imageIndex], clusters);
+      matToVec(models[counter], clusters);
     }
   }
 }
@@ -435,8 +446,7 @@ void drawingResponceInner(vector<Mat>& response, vector<vector<float> > &models,
 // produce Agg image from responses
 void drawingResponce(vector<vector<Mat> > &response, vector<vector<float> > &models, int &counter, int flag, Mat &aggImg){
     double alpha = 0.5;
-    for(uint type = 0; type < response.size(); type++)
-    {
+    for(uint type = 0; type < response.size(); type++){
       drawingResponceInner(response[type], models, counter, flag, aggImg, type, alpha);
     }
 }
@@ -450,16 +460,21 @@ void testImgModel(vector<vector<Mat> > &response, vector<float> &model){
       matToVec(model, clusters);
     }
   }
+  cout << "This is sthe size produced: " << model.size() << endl;
+  boost::sort(model);
+  cout << "This is sthe size produced: " << model.size() << endl;
+  cout << "This is the model: \n";
+  for(int q =0;q<model.size();q++){
+    cout << model[q] << " ,";
+  }
+  cout << "\n\n";
 }
 
 // Generate models from training images
 void createModels(vector<vector<Mat> >& response, vector<vector<float> >& models, int counter){
   Mat aggImg;
 
-  drawingResponce(response, models,counter, 0, aggImg);
-//  roundModel(models);
-
-  response.clear();
+  drawingResponce(response, models, counter, 0, aggImg);
 }
 
 // Generate Texton Dictionary from all imgs in sub dirs
@@ -492,6 +507,7 @@ void createTexDic(mH2 filterbank, vector<string> classes , m3& models, int n_sig
       Mat aggImg;
       vector<vector<Mat> > response;
 
+      // Will count the number of images in each class
       int imagecounter =0;
       while ((ent = readdir(dir)) != NULL) {
         imgName = ent->d_name;
@@ -514,15 +530,15 @@ void createTexDic(mH2 filterbank, vector<string> classes , m3& models, int n_sig
 
             // If type is test cluster each image
             if(type.compare("test/")==0){
-              createModels(response, models[doCount], counter);
+              createModels(response, models[doCount], imagecounter);
               response.clear();
             }
           }
 
+          imagecounter++;
         } else{
           cout << "incorrect extension: " << imgName << endl;
         }
-      imagecounter++;
       }
 
       // If type is train aggregate and generate clusters
@@ -856,6 +872,23 @@ void generateModels(mH2 filterbank, vector<float> textonDictionary, const float*
     saveHist(modelHist);
 }
 
+void createFilterbank(mH2 &filterbank, int &n_sigmas, int &n_orientations){
+  vector<float> sigmas;
+  sigmas.push_back(1);
+  sigmas.push_back(2);
+  sigmas.push_back(4);
+  n_sigmas = sigmas.size();
+  n_orientations = 6;
+
+  vector<Mat > edge, bar, rot;
+  makeRFSfilters(edge, bar, rot, sigmas, n_orientations);
+
+  // Store created filters in fitlerbank 2d vector<Mat>
+  filterbank.push_back(edge);
+  filterbank.push_back(bar);
+  filterbank.push_back(rot);
+}
+
 int main()
 {
     // Start the window thread(essential for deleting windows)
@@ -871,27 +904,14 @@ int main()
     bool modelsGenerated = false;
 
     // Declare resources
-    mH2 filterbank;
     const string type[] = {"train/", "test/", "novel/"};
-
-    vector<float> sigmas;
-    sigmas.push_back(1);
-    sigmas.push_back(2);
-    sigmas.push_back(4);
-    int n_sigmas = sigmas.size();
-    int n_orientations = 6;
-
-    vector<Mat > edge, bar, rot;
-    makeRFSfilters(edge, bar, rot, sigmas, n_orientations);
-
-    // Store created filters in fitlerbank 2d vector<Mat>
-    filterbank.push_back(edge);
-    filterbank.push_back(bar);
-    filterbank.push_back(rot);
 
     // --------------------- Texton Dictionary Creation ---------------------- //
     // If statement to reduce const histRange scope, allowing it to be redeclared
     if(true){
+      int n_sigmas, n_orientations;
+      mH2 filterbank;
+      createFilterbank(filterbank, n_sigmas, n_orientations);
 
       cout << "creating texton dictionary" << endl;
 
@@ -929,6 +949,10 @@ int main()
       string tmp;
       cin >> tmp;
       if(tmp == "1"){
+        int n_sigmas, n_orientations;
+        mH2 filterbank;
+        createFilterbank(filterbank, n_sigmas, n_orientations);
+
           cout << "\n\n-------------------Regenerating TextonDictionary and Bins--------------------\n\n";
           cout << "ReCalculating Texton Dictionary and saving\n\n";
           vector<float> textonDictionary;
@@ -936,6 +960,10 @@ int main()
           cont = true;
       }
       else if(tmp == "2"){
+        int n_sigmas, n_orientations;
+        mH2 filterbank;
+        createFilterbank(filterbank, n_sigmas, n_orientations);
+
         // Measure start time
         auto t1 = std::chrono::high_resolution_clock::now();
         cout << "\n\n-------------------Regenerating models--------------------\n\n";
@@ -976,9 +1004,15 @@ int main()
 
         loadHist(modelHist);
 
-        vector<float> testModel;
+        cout << "\nFirst.. \n\n";
+        int n_sigmas, n_orientations;
+        mH2 filterbank;
+        createFilterbank(filterbank, n_sigmas, n_orientations);
 
-        Mat inputImg =  imread("../../../TEST_IMAGES/testImage/52a-scale_2_im_8_col.png", CV_LOAD_IMAGE_GRAYSCALE);
+        vector<float> testModel;
+        Mat inputImg = Mat::zeros(200,200,CV_8UC1);
+
+        inputImg = imread("../../../TEST_IMAGES/testImage/16a-scale_2_im_8_col.png", CV_LOAD_IMAGE_GRAYSCALE);
         if(!inputImg.data){
           cout << "unable to load image.." << endl;
           return -1;
@@ -987,7 +1021,9 @@ int main()
         vector<vector<Mat> > response;
         apply_filterbank(inputImg, filterbank, response, n_sigmas, n_orientations);
         testImgModel(response, testModel);
+//
 
+        cout << "\nContinue.. \n\n";
         // Replace cluster centers with nearest Texton
         textonModel(textonDictionary, testModel);
 
@@ -995,11 +1031,11 @@ int main()
         int listLen = testModel.size();
 
         // Convert array to Mat
-        Mat tmp = Mat::zeros(listLen, 1, CV_32FC1);
+        Mat tmp = Mat::zeros(listLen, 1, CV_32F);
         textToMat(tmp, testModel);
         bool uniform = false;
 
-        Mat novelHist = Mat::zeros(listLen, 1, CV_32FC1);
+        Mat novelHist = Mat::zeros(listLen, 1, CV_32F);
         createHist(tmp, novelHist, textonDictionary.size(), binArray, uniform);
 
         // Distance with overly large number
@@ -1021,7 +1057,7 @@ int main()
               if(tmpt<distance){
                 distance = tmpt;
                 match = i;
-                cout << "found a better match, the new distance is: " << distance << endl;
+                cout << "found a better match: " << classes.at(match) <<" the new distance is: " << distance << endl;
               }
             }
           }
