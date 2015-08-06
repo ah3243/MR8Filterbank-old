@@ -812,14 +812,20 @@ void createFilterbank(mH2 &filterbank, int &n_sigmas, int &n_orientations){
 
 void getImages(path p){
   try{
+    vector<string> files;
     // Check path exists
     if(exists(p)){
       if(is_regular_file(p)){
         cout << p << " is a regular file, with a size of: " << file_size(p) << endl;
+        cout << "and it's extension is: " << p.extension().string() << endl;
       }else if(is_directory(p)){
-          cout << "This is a directory containing: " << endl;
-          copy(directory_iterator(p), directory_iterator(),
-          ostream_iterator<directory_entry>(cout, "\n"));
+        int count = 0;
+        directory_iterator end_itr;
+        for(directory_iterator itr(p); itr != end_itr; ++itr){
+          files.push_back(itr -> path().filename().string());
+          cout << "This is the directory status: " << files[count] << endl;
+          count ++;
+        }
       }else{
         cout << "The path is valid but this is not a regular file." << endl;
       }
@@ -831,11 +837,41 @@ void getImages(path p){
   }
 }
 
+void segmentImg(Mat in, vector<Mat>& segImg){
+  for(int c=0; c < 10; c++){
+    for(int r=0 ;r < 10; r++){
+      // Select ROI and copy to tmp Matrix
+      Mat tmp;
+      in(Rect(r,c,20,20)).copyTo(tmp);
+
+      // Reshape to 1D vector and push to array
+      segImg.push_back(tmp.reshape(400,1));
+    }
+  }
+}
+
 int main(){
     // Start the window thread(essential for deleting windows)
     cvStartWindowThread();
-    path p("./CMakeFiles");
-    getImages(p);
+
+    string basePath = "../../../TEST_IMAGES/kth-tips/bread/train/";
+    path p(basePath);
+//    getImages(p);
+    stringstream ss;
+    ss << basePath;
+    ss << "52a-scale_2_im_1_col.png";
+    Mat input1 = imread(ss.str());
+
+
+    vector<Mat> segImgArr(1000,Mat::zeros(1,1300,CV_32FC2));
+    segmentImg(input1, segImgArr);
+    cout << "This is the size: " << segImgArr[0].size() << endl;
+
+    Mat labels, centers;
+    int attempts = 5, clustercnt = 10;
+    kmeans(segImgArr[0], clustercnt, labels, TermCriteria(CV_TERMCRIT_ITER|CV_TERMCRIT_EPS, 10000, 0.0001), attempts, KMEANS_PP_CENTERS, centers);
+
+    cout << "This is the size of the centers: " << centers.size() << endl;
 
     // dirs holding texton and model generating images
     string textonclasses[] = {"wood", "cotton", "cork", "bread"};
@@ -851,7 +887,7 @@ int main(){
 
     // --------------------- Texton Dictionary Creation ---------------------- //
     // If statement to reduce const histRange scope, allowing it to be redeclared
-    if(true){
+    if(false){
       int n_sigmas, n_orientations;
       mH2 filterbank;
       createFilterbank(filterbank, n_sigmas, n_orientations);
